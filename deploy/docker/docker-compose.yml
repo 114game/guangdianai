@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # =========================================
+  # MySQL 数据库
+  # =========================================
+  mysql:
+    image: mysql:8.0
+    container_name: ai-business-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_business_platform}
+      MYSQL_USER: ${MYSQL_USER:-ai_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_password}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================
+  # Redis (可选，用于缓存)
+  # =========================================
+  redis:
+    image: redis:7-alpine
+    container_name: ai-business-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # =========================================
+  # 后端 API 服务
+  # =========================================
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../deploy/docker/Dockerfile.backend
+    container_name: ai-business-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://${MYSQL_USER:-ai_user}:${MYSQL_PASSWORD:-ai_password}@mysql:3306/${MYSQL_DATABASE:-ai_business_platform}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-key}
+      JWT_ADMIN_SECRET: ${JWT_ADMIN_SECRET:-your-admin-jwt-secret-key}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      COS_REGION: ${COS_REGION:-}
+      COS_BUCKET: ${COS_BUCKET:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ../../backend/uploads:/app/uploads
+      - ../../backend/logs:/app/logs
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =========================================
+  # 前端应用 (使用 Nginx 服务)
+  # =========================================
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../deploy/docker/Dockerfile.frontend
+    container_name: ai-business-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - ai-network
+
+# =========================================
+# 数据卷
+# =========================================
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+
+# =========================================
+# 网络
+# =========================================
+networks:
+  ai-network:
+    driver: bridge

@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id                Int            @id @default(autoincrement())
+  phone             String?        @unique
+  email             String?        @unique
+  username          String?
+  password          String
+  nickname          String?
+  avatar            String?
+  points            Int            @default(0)
+  status            Int            @default(1) // 1:正常 0:禁用
+  wechatOpenid      String?        @unique
+  wechatUnionid     String?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  loginLogs         LoginLog[]
+  pointLogs         PointLog[]
+  rechargeRecords   RechargeRecord[]
+  cardLogs          CardLog[]
+  chatSessions      ChatSession[]
+  chatMessages      ChatMessage[]
+  works             Work[]
+  drawings          Drawing[]
+  feedbacks         Feedback[]
+}
+
+// 登录日志表
+model LoginLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  ip        String?
+  userAgent String?
+  loginType String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 卡密表
+model Card {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  points      Int
+  status      Int       @default(0) // 0:未使用 1:已使用 2:已过期
+  batchNo     String?
+  expireAt    DateTime?
+  usedAt      DateTime?
+  usedBy      Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  usedByUser  User?     @relation("CardUsedBy", fields: [usedBy], references: [id])
+  cardLogs    CardLog[]
+}
+
+// 卡密使用记录表
+model CardLog {
+  id        Int      @id @default(autoincrement())
+  cardId    Int
+  userId    Int
+  points    Int
+  createdAt DateTime @default(now())
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 积分流水表
+model PointLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String   // recharge, consume, exchange
+  amount    Int      // 变动数量，正数是增加，负数是扣减
+  balance   Int      // 变动后余额
+  remark    String?  // 备注
+  relatedId Int?     // 关联ID
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 充值记录表
+model RechargeRecord {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  orderNo     String   @unique
+  amount      Decimal  @db.Decimal(10, 2)
+  points      Int
+  payType     String?
+  payStatus   Int      @default(0)
+  payTime     DateTime?
+  transaction String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 对话模型表
+model ChatModel {
+  id          Int       @id @default(autoincrement())
+  name        String
+  code        String    @unique
+  apiUrl      String
+  apiKey      String
+  headers     Json?
+  modelType   String    // chat, image
+  status      Int       @default(1)
+  isDefault   Boolean   @default(false)
+  sort        Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  chatSessions ChatSession[]
+  chatMessages ChatMessage[]
+  apps        App[]
+}
+
+// 绘画模型表
+model DrawingModel {
+  id        Int       @id @default(autoincrement())
+  name      String
+  code      String    @unique
+  apiUrl    String
+  apiKey    String
+  modelType String    // text2img, img2img, poster, mainimg, detail
+  status    Int       @default(1)
+  isDefault Boolean   @default(false)
+  sort      Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  drawings  Drawing[]
+}
+
+// 对话会话表
+model ChatSession {
+  id          Int           @id @default(autoincrement())
+  userId      Int
+  title       String?
+  modelId     Int
+  model       ChatModel     @relation(fields: [modelId], references: [id])
+  messages    ChatMessage[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 对话消息表
+model ChatMessage {
+  id        Int           @id @default(autoincrement())
+  sessionId Int
+  userId    Int
+  role      String        // user, assistant, system
+  content   String
+  images    Json?
+  modelId   Int?
+  model     ChatModel?    @relation(fields: [modelId], references: [id])
+  points    Int           @default(0)
+  createdAt DateTime      @default(now())
+  session   ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// AI 应用表
+model App {
+  id           Int           @id @default(autoincrement())
+  name         String
+  icon         String?
+  description  String?
+  template     String
+  points       Int           @default(0)
+  modelId      Int?
+  model        ChatModel?    @relation(fields: [modelId], references: [id])
+  status       Int           @default(1)
+  sort         Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  fields       AppField[]
+  works        Work[]
+}
+
+// AI 应用字段表
+model AppField {
+  id          Int       @id @default(autoincrement())
+  appId       Int
+  name        String
+  key         String
+  fieldType   String    // text, textarea, select, radio, checkbox, number, image, file, switch, date
+  required    Boolean   @default(false)
+  defaultValue String?
+  options     Json?
+  placeholder String?
+  sort        Int       @default(0)
+  status      Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+}
+
+// 作品表
+model Work {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  appId     Int
+  app       App       @relation(fields: [appId], references: [id])
+  title     String?
+  inputData Json
+  outputData Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 绘画作品表
+model Drawing {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  modelId     Int
+  model       DrawingModel   @relation(fields: [modelId], references: [id])
+  type        String         // text2img, img2img, poster, mainimg, detail
+  inputData   Json
+  outputUrls  Json
+  points      Int            @default(0)
+  status      Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 轮播图表
+model Banner {
+  id        Int       @id @default(autoincrement())
+  title     String
+  image     String
+  link      String?
+  sort      Int       @default(0)
+  status    Int       @default(1)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 公告表
+model Announcement {
+  id        Int       @id @default(autoincrement())
+  title     String
+  content   String
+  type      String    // scroll, fixed
+  sort      Int       @default(0)
+  status    Int       @default(1)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 网站配置表
+model Config {
+  id        Int       @id @default(autoincrement())
+  key       String    @unique
+  value     String?
+  remark    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 管理员表
+model Admin {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String
+  realName  String?
+  avatar    String?
+  roleId    Int?
+  status    Int       @default(1)
+  lastLoginAt DateTime?
+  lastLoginIp String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  role      Role?     @relation(fields: [roleId], references: [id])
+}
+
+// 角色表
+model Role {
+  id          Int           @id @default(autoincrement())
+  name        String
+  permissions Json?
+  status      Int           @default(1)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  admins      Admin[]
+}
+
+// 操作日志表
+model OperationLog {
+  id        Int       @id @default(autoincrement())
+  adminId   Int?
+  userId    Int?
+  module    String?
+  action    String?
+  content   String?
+  ip        String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+}
+
+// 意见反馈表
+model Feedback {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  content   String
+  images    Json?
+  status    Int       @default(0)
+  reply     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 文章分类表
+model ArticleCategory {
+  id          Int           @id @default(autoincrement())
+  name        String
+  sort        Int           @default(0)
+  status      Int           @default(1)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  articles    Article[]
+}
+
+// 文章表
+model Article {
+  id            Int                @id @default(autoincrement())
+  categoryId    Int
+  category      ArticleCategory    @relation(fields: [categoryId], references: [id])
+  title         String
+  cover         String?
+  content       String
+  summary       String?
+  status        Int                @default(0)
+  viewCount     Int                @default(0)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
